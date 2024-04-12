@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 )
@@ -66,11 +65,6 @@ func (s *Server) loop() {
 	}
 }
 
-func (s *Server) handleRawMessage(rawMsg []byte) error {
-	fmt.Println(string(rawMsg))
-	return nil
-}
-
 func (s *Server) listen() error {
 	for {
 		conn, err := s.ln.Accept()
@@ -84,6 +78,11 @@ func (s *Server) listen() error {
 	}
 }
 
+func (s *Server) handleRawMessage(rawMsg []byte) error {
+	fmt.Println(string(rawMsg))
+	return nil
+}
+
 func (s *Server) handleConn(conn net.Conn) {
 	peer := NewPeer(conn, s.msgChan)
 	s.peersChan <- peer
@@ -95,5 +94,5 @@ func (s *Server) handleConn(conn net.Conn) {
 
 func main() {
 	server := NewServer(Config{})
-	log.Fatal(server.Start())
+	slog.Error("server error", "err", server.Start())
 }
