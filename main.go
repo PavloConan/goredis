@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"goredis/client"
+	"log"
 	"log/slog"
 	"net"
+	"time"
 )
 
 const defaultListenAddr = ":6969"
@@ -19,6 +23,8 @@ type Server struct {
 	peersChan chan *Peer
 	quitChan  chan struct{}
 	msgChan   chan []byte
+
+	kv *KeyValStore
 }
 
 func NewServer(cfg Config) *Server {
@@ -32,6 +38,7 @@ func NewServer(cfg Config) *Server {
 		peersChan: make(chan *Peer),
 		quitChan:  make(chan struct{}),
 		msgChan:   make(chan []byte),
+		kv:        NewKeyValStore(),
 	}
 }
 
@@ -79,7 +86,19 @@ func (s *Server) listen() error {
 }
 
 func (s *Server) handleRawMessage(rawMsg []byte) error {
-	fmt.Println(string(rawMsg))
+	cmd, err := parseCommand(string(rawMsg))
+
+	if err != nil {
+		return err
+	}
+
+	switch v := cmd.(type) {
+	case SetCommand:
+		return s.kv.Set(v.key, v.val)
+	case GetCommand:
+		s.kv.Get(v.key)
+	}
+
 	return nil
 }
 
@@ -94,5 +113,21 @@ func (s *Server) handleConn(conn net.Conn) {
 
 func main() {
 	server := NewServer(Config{})
-	slog.Error("server error", "err", server.Start())
+	go func() {
+		log.Fatal(server.Start())
+	}()
+	time.Sleep(time.Second)
+
+	client := client.NewClient("localhost:6969")
+
+	for i := 0; i < 10; i++ {
+		go func() {
+			if err := client.Set(context.Background(), fmt.Sprintf("foo_%d", i), "bar"); err != nil {
+				log.Fatal(err)
+			}
+		}()
+	}
+	time.Sleep(time.Second)
+	fmt.Println(server.kv.data)
+	select {}
 }
