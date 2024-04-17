@@ -16,13 +16,18 @@ type Config struct {
 	listenAddr string
 }
 
+type Message struct {
+	data []byte
+	peer *Peer
+}
+
 type Server struct {
 	Config
 	ln        net.Listener
 	peers     map[*Peer]bool
 	peersChan chan *Peer
 	quitChan  chan struct{}
-	msgChan   chan []byte
+	msgChan   chan Message
 
 	kv *KeyValStore
 }
@@ -37,7 +42,7 @@ func NewServer(cfg Config) *Server {
 		peers:     make(map[*Peer]bool),
 		peersChan: make(chan *Peer),
 		quitChan:  make(chan struct{}),
-		msgChan:   make(chan []byte),
+		msgChan:   make(chan Message),
 		kv:        NewKeyValStore(),
 	}
 }
@@ -60,8 +65,8 @@ func (s *Server) Start() error {
 func (s *Server) loop() {
 	for {
 		select {
-		case rawMsg := <-s.msgChan:
-			if err := s.handleRawMessage(rawMsg); err != nil {
+		case msg := <-s.msgChan:
+			if err := s.handleMessage(msg); err != nil {
 				slog.Error("raw message error", "err", err)
 			}
 		case peer := <-s.peersChan:
@@ -85,8 +90,8 @@ func (s *Server) listen() error {
 	}
 }
 
-func (s *Server) handleRawMessage(rawMsg []byte) error {
-	cmd, err := parseCommand(string(rawMsg))
+func (s *Server) handleMessage(msg Message) error {
+	cmd, err := parseCommand(string(msg.data))
 
 	if err != nil {
 		return err
@@ -96,7 +101,16 @@ func (s *Server) handleRawMessage(rawMsg []byte) error {
 	case SetCommand:
 		return s.kv.Set(v.key, v.val)
 	case GetCommand:
-		s.kv.Get(v.key)
+		val, ok := s.kv.Get(v.key)
+		if !ok {
+			return fmt.Errorf("key not found")
+		}
+
+		_, err := msg.peer.Send(val)
+
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -105,7 +119,6 @@ func (s *Server) handleRawMessage(rawMsg []byte) error {
 func (s *Server) handleConn(conn net.Conn) {
 	peer := NewPeer(conn, s.msgChan)
 	s.peersChan <- peer
-	slog.Info("new peer connected", "remoteAddr", conn.RemoteAddr())
 	if err := peer.readLoop(); err != nil {
 		slog.Error("peer read error", "err", err, "remoteAddr", conn.RemoteAddr())
 	}
@@ -121,13 +134,18 @@ func main() {
 	client := client.NewClient("localhost:6969")
 
 	for i := 0; i < 10; i++ {
-		go func() {
-			if err := client.Set(context.Background(), fmt.Sprintf("foo_%d", i), "bar"); err != nil {
-				log.Fatal(err)
-			}
-		}()
+		if err := client.Set(context.Background(), fmt.Sprintf("foo_%d", i), fmt.Sprintf("bar_%d", i)); err != nil {
+			log.Fatal(err)
+		}
+
+		val, err := client.Get(context.Background(), fmt.Sprintf("foo_%d", i))
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Println(val)
 	}
-	time.Sleep(time.Second)
 	fmt.Println(server.kv.data)
 	select {}
 }

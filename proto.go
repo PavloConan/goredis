@@ -40,8 +40,16 @@ func parseCommand(raw string) (Command, error) {
 		}
 
 		if v.Type() == resp.Array {
-			for i, val := range v.Array() {
+			for _, val := range v.Array() {
 				switch val.String() {
+				case CommandGET:
+					if len(v.Array()) != 2 {
+						return nil, errors.New("invalid number of arguments for GET command")
+					}
+					cmd = GetCommand{
+						key: v.Array()[1].Bytes(),
+					}
+
 				case CommandSET:
 					if len(v.Array()) != 3 {
 						return nil, errors.New("invalid number of arguments for SET command")
@@ -50,10 +58,8 @@ func parseCommand(raw string) (Command, error) {
 						key: v.Array()[1].Bytes(),
 						val: v.Array()[2].Bytes(),
 					}
-
-					return cmd, nil
 				}
-				fmt.Printf("  #%d %s, value: '%s'\n", i, val.Type(), val)
+				return cmd, nil
 			}
 		}
 	}

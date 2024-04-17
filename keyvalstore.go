@@ -16,7 +16,7 @@ func NewKeyValStore() *KeyValStore {
 func (kv *KeyValStore) Set(key, val []byte) error {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	
+
 	kv.data[string(key)] = val
 	return nil
 }
