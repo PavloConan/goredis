@@ -1,4 +1,4 @@
 run: build
-	@./bin/goredis
+	@./bin/goredis --listenAddr :6969
 build:
 	@go build -o bin/goredis .

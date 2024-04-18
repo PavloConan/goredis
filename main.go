@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
+	"flag"
 	"fmt"
-	"goredis/client"
 	"log"
 	"log/slog"
 	"net"
-	"time"
 )
 
 const defaultListenAddr = ":6969"
@@ -17,7 +15,7 @@ type Config struct {
 }
 
 type Message struct {
-	data []byte
+	cmd  Command
 	peer *Peer
 }
 
@@ -57,7 +55,7 @@ func (s *Server) Start() error {
 
 	go s.loop()
 
-	slog.Info("server running", "listenAddr", s.listenAddr)
+	slog.Info("goredis server running", "listenAddr", s.listenAddr)
 
 	return s.listen()
 }
@@ -91,13 +89,7 @@ func (s *Server) listen() error {
 }
 
 func (s *Server) handleMessage(msg Message) error {
-	cmd, err := parseCommand(string(msg.data))
-
-	if err != nil {
-		return err
-	}
-
-	switch v := cmd.(type) {
+	switch v := msg.cmd.(type) {
 	case SetCommand:
 		return s.kv.Set(v.key, v.val)
 	case GetCommand:
@@ -109,7 +101,7 @@ func (s *Server) handleMessage(msg Message) error {
 		_, err := msg.peer.Send(val)
 
 		if err != nil {
-			return err
+			slog.Error("peer send error", "err", err)
 		}
 	}
 
@@ -125,27 +117,10 @@ func (s *Server) handleConn(conn net.Conn) {
 }
 
 func main() {
-	server := NewServer(Config{})
-	go func() {
-		log.Fatal(server.Start())
-	}()
-	time.Sleep(time.Second)
+	listenAddr := flag.String("listenAddr", defaultListenAddr, "listen address of goredis server")
+	server := NewServer(Config{
+		listenAddr: *listenAddr,
+	})
 
-	client := client.NewClient("localhost:6969")
-
-	for i := 0; i < 10; i++ {
-		if err := client.Set(context.Background(), fmt.Sprintf("foo_%d", i), fmt.Sprintf("bar_%d", i)); err != nil {
-			log.Fatal(err)
-		}
-
-		val, err := client.Get(context.Background(), fmt.Sprintf("foo_%d", i))
-
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		fmt.Println(val)
-	}
-	fmt.Println(server.kv.data)
-	select {}
+	log.Fatal(server.Start())
 }
